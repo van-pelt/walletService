@@ -1,4 +1,4 @@
-module github.com/van-pelt/walletService/v1.1.0
+module github.com/van-pelt/walletService
 
 go 1.16
 
