@@ -12,6 +12,21 @@ var ErrAccountNotFound = errors.New("Account not found")
 var ErrNotEnoughBalance = errors.New("Not enough balance")
 var ErrPaymentNotFound = errors.New("Payment not found")
 
+type ErrCurrPaymentNotFound struct {
+	ErrMess string
+	ID      string
+}
+
+func NewErrCurrPaymentNotFound(errMess string, ID string) *ErrCurrPaymentNotFound {
+	return &ErrCurrPaymentNotFound{ErrMess: errMess, ID: ID}
+}
+
+func (e ErrCurrPaymentNotFound) Error() string {
+	//panic("implement me")
+	return e.ErrMess + ":" + e.ID
+
+}
+
 type Service struct {
 	accounts      []*types.Account
 	payments      []*types.Payment
@@ -19,6 +34,9 @@ type Service struct {
 }
 
 type Error string
+type testService struct {
+	*Service
+}
 
 func (e Error) Error() string {
 	return string(e)
@@ -99,12 +117,50 @@ func (s *Service) FindPaymentByID(paymentID string) (*types.Payment, error) {
 		}
 	}
 	return nil, ErrPaymentNotFound
+	//return nil, NewErrCurrPaymentNotFound(ErrPaymentNotFound.Error(), paymentID)
 }
-
 func (s *Service) Reject(paymentID string) error {
-	payment, err := s.FindPaymentByID(paymentID)
+
+	targetPayment, err := s.FindPaymentByID(paymentID)
 	if err != nil {
 		return err
+	}
+	if targetPayment == nil {
+		return ErrPaymentNotFound
+	}
+
+	targetAccount, err := s.FindAccountByID(targetPayment.AccountID)
+	if err != nil {
+		return err
+	}
+	targetPayment.Status = types.StatusFail
+	targetAccount.Balance += targetPayment.Amount
+	return nil
+}
+
+func (s *Service) Repeat(paymentID string) (*types.Payment, error) {
+	targetPayment, err := s.FindPaymentByID(paymentID)
+	if err != nil {
+		return nil, err
+	}
+	if targetPayment == nil {
+		return nil, ErrPaymentNotFound
+	}
+
+	return &types.Payment{
+		ID:        uuid.New().String(),
+		AccountID: targetPayment.AccountID,
+		Amount:    targetPayment.Amount,
+		Category:  targetPayment.Category,
+		Status:    targetPayment.Status,
+	}, nil
+}
+
+// my func
+/*func (s *Service) Reject(paymentID string) error {
+	payment, err := s.FindPaymentByID(paymentID)
+	if err != nil {
+		return fmt.Errorf("s.FindPaymentByID() is ERR: %w", err)
 	}
 	if payment.Status != types.StatusInProgres {
 		return nil
@@ -117,4 +173,4 @@ func (s *Service) Reject(paymentID string) error {
 	acc.Balance += payment.Amount
 	payment.Amount = 0
 	return nil
-}
+}*/
