@@ -2,6 +2,7 @@ package wallet
 
 import (
 	"errors"
+	"fmt"
 	"github.com/google/uuid"
 	"github.com/van-pelt/walletTypes/pkg/types"
 )
@@ -11,6 +12,10 @@ var ErrAmountMustBePositive = errors.New("amount must be greater that 0")
 var ErrAccountNotFound = errors.New("Account not found")
 var ErrNotEnoughBalance = errors.New("Not enough balance")
 var ErrPaymentNotFound = errors.New("Payment not found")
+var ErrFavoriteNotFound = errors.New("Favorite not found")
+var ErrFavoriteIsIsset = errors.New("Favorite is isset")
+
+const favorite_prefix = "favorite_"
 
 type ErrCurrPaymentNotFound struct {
 	ErrMess string
@@ -30,6 +35,7 @@ func (e ErrCurrPaymentNotFound) Error() string {
 type Service struct {
 	accounts      []*types.Account
 	payments      []*types.Payment
+	favorites     []*types.Favorite
 	nextAccountID int64
 }
 
@@ -154,6 +160,50 @@ func (s *Service) Repeat(paymentID string) (*types.Payment, error) {
 		Category:  targetPayment.Category,
 		Status:    targetPayment.Status,
 	}, nil
+}
+
+func (s *Service) FavoritePayment(paymentID, name string) (*types.Favorite, error) {
+	if len(name) == 0 {
+		return nil, fmt.Errorf("Empty name")
+	}
+	targetPayment, err := s.FindPaymentByID(paymentID)
+	if err != nil {
+		return nil, err
+	}
+	if targetPayment == nil {
+		return nil, ErrPaymentNotFound
+	}
+	newFavoriteID := favorite_prefix + uuid.New().String()
+	_, err = s.FindFavoritePaymentByID(newFavoriteID)
+	if err != nil && err != ErrFavoriteNotFound {
+		return nil, err
+	}
+	newFavorite := &types.Favorite{
+		ID:        newFavoriteID,
+		AccountID: targetPayment.AccountID,
+		Name:      name,
+		Amount:    targetPayment.Amount,
+		Category:  targetPayment.Category,
+	}
+	s.favorites = append(s.favorites, newFavorite)
+	return newFavorite, nil
+}
+
+func (s *Service) FindFavoritePaymentByID(favoriteID string) (*types.Favorite, error) {
+	for _, favorite := range s.favorites {
+		if favorite.ID == favoriteID {
+			return favorite, nil
+		}
+	}
+	return nil, ErrFavoriteNotFound
+}
+
+func (s *Service) PayFromFavorite(favoriteID string) (*types.Payment, error) {
+	favorite, err := s.FindFavoritePaymentByID(favoriteID)
+	if err != nil {
+		return nil, err
+	}
+	return s.Pay(favorite.AccountID, favorite.Amount, favorite.Category)
 }
 
 // my func
