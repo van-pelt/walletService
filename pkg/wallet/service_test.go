@@ -57,6 +57,7 @@ func (s *testService) addAccount(data TestAccount) (*types.Account, []*types.Pay
 	if err != nil {
 		return nil, nil, fmt.Errorf("Can`t register account,error=%v", err)
 	}
+
 	err = s.Deposit(account.ID, data.balance)
 	if err != nil {
 		return nil, nil, fmt.Errorf("Can`t deposit account,error=%v", err)
@@ -295,6 +296,7 @@ func TestService_Reject_success_lesson(t *testing.T) {
 		return
 	}
 	payment := payments[0]
+	fmt.Println(payment.Status)
 	err = s.Reject(payment.ID)
 	if err != nil {
 		t.Errorf("Reject() err=%v", err)
@@ -305,6 +307,7 @@ func TestService_Reject_success_lesson(t *testing.T) {
 		t.Errorf("Reject() can`t find payment by ID,err=%v", err)
 		return
 	}
+	fmt.Println(savedPayment.Status)
 	if savedPayment.Status != types.StatusFail {
 		t.Errorf("Reject() status didn`t changed,payment=%v", savedPayment)
 		return
@@ -347,6 +350,7 @@ func TestService_Repeat_fail(t *testing.T) {
 		t.Error(err)
 		return
 	}
+
 	newPayment, err := s.Repeat(payments[0].ID)
 	payments[0].ID = newPayment.ID
 	if err != nil {

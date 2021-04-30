@@ -5,6 +5,11 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/van-pelt/walletTypes/pkg/types"
+	"io"
+	"log"
+	"os"
+	"strconv"
+	"strings"
 )
 
 var ErrPhoneIsRegistred = errors.New("Phone alredy registred")
@@ -204,6 +209,94 @@ func (s *Service) PayFromFavorite(favoriteID string) (*types.Payment, error) {
 		return nil, err
 	}
 	return s.Pay(favorite.AccountID, favorite.Amount, favorite.Category)
+}
+
+func (s *Service) ExportToFile(path string) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := file.Close(); cerr != nil {
+			log.Print(err)
+		}
+	}()
+	for _, account := range s.accounts {
+		_, err = file.Write([]byte(account.ToString()))
+		if err != nil {
+			log.Print(err)
+		}
+	}
+	return nil
+}
+func (s *Service) ImportFromFile(path string) error {
+	//dat, err := ioutil.ReadFile("filename")
+	content := make([]byte, 0)
+	buf := make([]byte, 4)
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_RDWR, 0666)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := file.Close(); cerr != nil {
+			log.Print(err)
+		}
+	}()
+
+	for {
+		read, err := file.Read(buf)
+		if err == io.EOF {
+			content = append(content, buf[:read]...)
+			break
+		}
+		if err != nil {
+			return err
+		}
+		content = append(content, buf[:read]...)
+	}
+	data := string(content)
+	data = strings.TrimSuffix(data, "|")
+	lines := strings.Split(data, "|")
+	for _, line := range lines {
+		elem := strings.Split(line, ";")
+		fmt.Println(elem)
+		if len(elem) != 3 {
+			return errors.New("unconsistence data")
+		}
+
+		accID, err := strconv.ParseInt(elem[0], 10, 64)
+		if err != nil {
+			fmt.Printf("%d of type %T", accID, accID)
+		}
+		acc, err := s.FindAccountByID(accID)
+		if err != nil && err != ErrAccountNotFound {
+			return err
+		}
+		newBalance, err := strconv.ParseInt(elem[2], 10, 64)
+		if err != nil {
+			fmt.Printf("%d of type %T", accID, accID)
+		}
+		if err == ErrAccountNotFound {
+			newAccount, err := s.RegisterAccount(types.Phone(elem[1]))
+			if err != nil {
+				return err
+			}
+			err = s.Deposit(newAccount.ID, types.Money(newBalance))
+			if err != nil {
+				return err
+			}
+		} else {
+			acc.Balance = types.Money(newBalance)
+			acc.Phone = types.Phone(elem[1])
+		}
+	}
+	return nil
+}
+
+func (s *Service) PrintAccounts() {
+	for _, elem := range s.accounts {
+		fmt.Println("ID=", elem.ID, " Phone=", elem.Phone, " Balance=", elem.Balance)
+	}
 }
 
 // my func
