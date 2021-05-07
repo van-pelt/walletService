@@ -4,6 +4,6 @@ go 1.16
 
 require (
 	github.com/google/uuid v1.2.0
-	github.com/van-pelt/walletTypes v0.0.0-20210430120840-58fbf96585da
+	github.com/van-pelt/walletTypes v0.0.0-20210430184545-175684e1ba4a
 
 )

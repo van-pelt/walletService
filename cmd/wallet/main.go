@@ -45,17 +45,16 @@ func main() {
 		return
 	}
 	filename := basePath + "/dump/account.dump"
-
 	err = svc.ExportToFile(filename)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-
 	err = svc.ImportFromFile(filename)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 	svc.PrintAccounts()
+	svc.PrintAllWallet()
 }

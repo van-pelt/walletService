@@ -7,9 +7,11 @@ import (
 	"github.com/van-pelt/walletTypes/pkg/types"
 	"io"
 	"log"
+	"math/rand"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var ErrPhoneIsRegistred = errors.New("Phone alredy registred")
@@ -151,13 +153,12 @@ func (s *Service) Reject(paymentID string) error {
 
 func (s *Service) Repeat(paymentID string) (*types.Payment, error) {
 	targetPayment, err := s.FindPaymentByID(paymentID)
-	if err != nil {
-		return nil, err
-	}
 	if targetPayment == nil {
 		return nil, ErrPaymentNotFound
 	}
-
+	if err != nil {
+		return nil, err
+	}
 	return &types.Payment{
 		ID:        uuid.New().String(),
 		AccountID: targetPayment.AccountID,
@@ -172,17 +173,18 @@ func (s *Service) FavoritePayment(paymentID, name string) (*types.Favorite, erro
 		return nil, fmt.Errorf("Empty name")
 	}
 	targetPayment, err := s.FindPaymentByID(paymentID)
-	if err != nil {
-		return nil, err
-	}
 	if targetPayment == nil {
 		return nil, ErrPaymentNotFound
+	}
+	if err != nil {
+		return nil, err
 	}
 	newFavoriteID := favorite_prefix + uuid.New().String()
 	_, err = s.FindFavoritePaymentByID(newFavoriteID)
 	if err != nil && err != ErrFavoriteNotFound {
 		return nil, err
 	}
+
 	newFavorite := &types.Favorite{
 		ID:        newFavoriteID,
 		AccountID: targetPayment.AccountID,
@@ -214,7 +216,7 @@ func (s *Service) PayFromFavorite(favoriteID string) (*types.Payment, error) {
 func (s *Service) ExportToFile(path string) error {
 	file, err := os.Create(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("Create(%v):%w", path, err)
 	}
 	defer func() {
 		if cerr := file.Close(); cerr != nil {
@@ -225,6 +227,7 @@ func (s *Service) ExportToFile(path string) error {
 		_, err = file.Write([]byte(account.ToString()))
 		if err != nil {
 			log.Print(err)
+			return fmt.Errorf("Write():%w", err)
 		}
 	}
 	return nil
@@ -259,14 +262,13 @@ func (s *Service) ImportFromFile(path string) error {
 	lines := strings.Split(data, "|")
 	for _, line := range lines {
 		elem := strings.Split(line, ";")
-		fmt.Println(elem)
 		if len(elem) != 3 {
 			return errors.New("unconsistence data")
 		}
-
 		accID, err := strconv.ParseInt(elem[0], 10, 64)
 		if err != nil {
 			fmt.Printf("%d of type %T", accID, accID)
+			return err
 		}
 		acc, err := s.FindAccountByID(accID)
 		if err != nil && err != ErrAccountNotFound {
@@ -297,6 +299,121 @@ func (s *Service) PrintAccounts() {
 	for _, elem := range s.accounts {
 		fmt.Println("ID=", elem.ID, " Phone=", elem.Phone, " Balance=", elem.Balance)
 	}
+}
+
+func (s *Service) PrintAllWallet() {
+	for _, elem := range s.accounts {
+		fmt.Println("ID=", elem.ID, " Phone=", elem.Phone, " Balance=", elem.Balance)
+		fmt.Println("	Payments:")
+		for _, p := range s.payments {
+			if p.AccountID == elem.ID {
+				fmt.Println("		ID=", p.ID, " AccountID=", p.AccountID, " Status=", p.Status, " Category=", p.Category, " Amount=", p.Amount)
+			}
+		}
+		fmt.Println("	Favorite:")
+		for _, f := range s.favorites {
+			if f.AccountID == elem.ID {
+				fmt.Println("		ID=", f.ID, " Account=", f.AccountID, " Name=", f.Name, " Category=", f.Category, " Amount=", f.Amount)
+			}
+		}
+	}
+}
+
+func (s *Service) GeneratedRandomData() error {
+	phones := []types.Phone{
+		"917590330",
+		"917590331",
+		"917590332",
+		"917590333",
+		"917590334",
+		"917590335",
+		"917590336",
+		"917590337",
+		"917590338",
+		"917590339",
+		"917590340",
+		"917590341",
+		"917590342",
+		"917590343",
+		"917590344",
+		"917590345",
+		"917590346",
+		"917590347",
+		"917590348",
+		"917590349",
+		"917590350",
+		"917590351",
+	}
+	categories := []types.PaymentCategory{
+		"auto",
+		"internet",
+		"food",
+		"health",
+		"learn",
+		"game",
+	}
+	maxPayment := 40
+	//maxFavorite := 5
+	maxAmount := 10000
+	//maxPhone := len(phones)
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	for _, phone := range phones {
+		fmt.Println("->", phone)
+		newAccount, err := s.RegisterAccount(phone)
+		if err == ErrPhoneIsRegistred {
+			fmt.Println(ErrPhoneIsRegistred)
+			continue
+		}
+		if err != nil {
+			fmt.Println(err)
+			return err
+		}
+		err = s.Deposit(newAccount.ID, types.Money(randInt(rnd, maxAmount)))
+		if err != nil {
+			fmt.Println(err)
+			return err
+		}
+
+		paymentsCount := randInt(rnd, maxPayment)
+		var tmpIds []string
+		for i := 0; i < paymentsCount; i++ {
+			newPayment, err := s.Pay(newAccount.ID, types.Money(randInt(rnd, 1500)), categories[randInt(rnd, len(categories)-1)])
+			if err != nil && err != ErrNotEnoughBalance {
+				fmt.Println(err)
+				return nil
+			}
+			if err == ErrNotEnoughBalance {
+				continue
+			}
+			tmpIds = append(tmpIds, newPayment.ID)
+		}
+		if len(tmpIds) != 0 {
+			fmt.Println(tmpIds)
+			if len(tmpIds) == 1 {
+				_, err := s.FavoritePayment(tmpIds[0], "TEST_FAVOR_0")
+				if err != nil {
+					return nil
+				}
+			} else {
+				for i := 0; i < randInt(rnd, len(tmpIds)); i++ {
+					_, err := s.FavoritePayment(tmpIds[randInt(rnd, len(tmpIds)-1)], "TEST_FAVOR_"+strconv.Itoa(i))
+					if err != nil {
+						return nil
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func randInt(rand *rand.Rand, max int) int {
+	num := rand.Intn(max)
+	if num == 0 {
+		return 1
+	}
+	return num
 }
 
 // my func
