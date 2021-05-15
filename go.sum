@@ -1,4 +1,4 @@
 github.com/google/uuid v1.2.0 h1:qJYtXnJRWmpe7m/3XlyhrsLrEURqHRM2kxzoxXqyUDs=
 github.com/google/uuid v1.2.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
-github.com/van-pelt/walletTypes v0.0.0-20210430184545-175684e1ba4a h1:NPkeQRKWLOnaq68m2QVPAURS6tH3jcZ2qzRMFY2SWH0=
-github.com/van-pelt/walletTypes v0.0.0-20210430184545-175684e1ba4a/go.mod h1:TAcie0iopTnF1EYUcSin22lVMrJNTwD/9FCwne+8bNo=
+github.com/van-pelt/walletTypes v0.0.0-20210507203125-f9e9c0b797d2 h1:zZZUdykYkzS1ZRXGw9sFGSh/gYnZE6/FPhoXy6LQqVo=
+github.com/van-pelt/walletTypes v0.0.0-20210507203125-f9e9c0b797d2/go.mod h1:TAcie0iopTnF1EYUcSin22lVMrJNTwD/9FCwne+8bNo=

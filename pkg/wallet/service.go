@@ -1,6 +1,7 @@
 package wallet
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
@@ -21,8 +22,14 @@ var ErrNotEnoughBalance = errors.New("Not enough balance")
 var ErrPaymentNotFound = errors.New("Payment not found")
 var ErrFavoriteNotFound = errors.New("Favorite not found")
 var ErrFavoriteIsIsset = errors.New("Favorite is isset")
+var ErrNoDumpDataFile = errors.New("No DUMP file")
 
-const favorite_prefix = "favorite_"
+const (
+	favorite_prefix = "favorite_"
+	accType         = "accounts"
+	payType         = "payments"
+	favType         = "favorites"
+)
 
 type ErrCurrPaymentNotFound struct {
 	ErrMess string
@@ -101,6 +108,7 @@ func (s *Service) Pay(accountID int64, amount types.Money, category types.Paymen
 	if account.Balance < amount {
 		return nil, ErrNotEnoughBalance
 	}
+
 	account.Balance -= amount
 	paymentID := uuid.New().String()
 	payment := &types.Payment{
@@ -359,7 +367,6 @@ func (s *Service) GeneratedRandomData() error {
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	for _, phone := range phones {
-		fmt.Println("->", phone)
 		newAccount, err := s.RegisterAccount(phone)
 		if err == ErrPhoneIsRegistred {
 			fmt.Println(ErrPhoneIsRegistred)
@@ -389,7 +396,6 @@ func (s *Service) GeneratedRandomData() error {
 			tmpIds = append(tmpIds, newPayment.ID)
 		}
 		if len(tmpIds) != 0 {
-			fmt.Println(tmpIds)
 			if len(tmpIds) == 1 {
 				_, err := s.FavoritePayment(tmpIds[0], "TEST_FAVOR_0")
 				if err != nil {
@@ -414,6 +420,342 @@ func randInt(rand *rand.Rand, max int) int {
 		return 1
 	}
 	return num
+}
+
+func (s *Service) Export(dir string) error {
+	if err := s.exportAccounts(dir); err != nil {
+		return err
+	}
+	if err := s.exportPayments(dir); err != nil {
+		return err
+	}
+	if err := s.exportFavorites(dir); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Service) exportAccounts(dir string) error {
+	if err := s.exportData(dir, accType); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Service) exportPayments(dir string) error {
+	if err := s.exportData(dir, payType); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Service) exportFavorites(dir string) error {
+	if err := s.exportData(dir, favType); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Service) exportData(dir, exportName string) error {
+	if len(s.accounts) != 0 {
+		file, err := os.Create(dir + "/" + exportName + ".dump")
+		defer func() {
+			if cerr := file.Close(); cerr != nil {
+				log.Print(err)
+			}
+		}()
+		if err != nil {
+			return fmt.Errorf("Create %v,err:%w", exportName, err)
+		}
+
+		switch exportName {
+		case accType:
+			{
+				p := types.AccToDump(s.accounts)
+				_, err = file.Write([]byte(p.ToDump()))
+				if err != nil {
+					return fmt.Errorf("Account write is err:%w", err)
+				}
+			}
+		case payType:
+			{
+				p := types.PayToDump(s.payments)
+				_, err = file.Write([]byte(p.ToDump()))
+				if err != nil {
+					return fmt.Errorf("Payment write is err:%w", err)
+				}
+			}
+		case favType:
+			{
+				p := types.FavToDump(s.favorites)
+				_, err = file.Write([]byte(p.ToDump()))
+				if err != nil {
+					return fmt.Errorf("Favorite write is err:%w", err)
+				}
+			}
+		default:
+			{
+				return fmt.Errorf("Unknown type struct")
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Service) Import(dir string) error {
+
+	if err := s.importAccounts(dir + "/" + accType + ".dump"); err != nil {
+		return fmt.Errorf("importAccounts:%w", err)
+	}
+	if err := s.importPayments(dir + "/" + payType + ".dump"); err != nil {
+		return fmt.Errorf("importPayments:%w", err)
+	}
+	if err := s.importFavorites(dir + "/" + favType + ".dump"); err != nil {
+		return fmt.Errorf("importFavorites:%w", err)
+	}
+	return nil
+}
+
+func (s *Service) ParseFile(filepath string) ([]string, error) {
+	var data []string
+	if _, err := os.Stat(filepath); os.IsNotExist(err) {
+		log.Printf("WARN:%v.%v file is missing from the set. Data integrity may be compromised", ErrNoDumpDataFile, filepath)
+		return data, nil
+	}
+
+	file, err := os.Open(filepath)
+	if err != nil {
+		return nil, fmt.Errorf("ParseFile.Read() err:%w", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		data = append(data, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("ParseFile.scan err:%w", err)
+	}
+
+	return data, nil
+}
+
+func (s *Service) importAccounts(filepath string) error {
+
+	data, err := s.ParseFile(filepath)
+	if err != nil {
+		return err
+	}
+
+	if len(data) > 0 {
+		for _, elem := range data {
+			dataLine := strings.Split(elem, ";") //id,phone,balance
+			id, err := strconv.ParseInt(dataLine[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("ID ParseInt() err:%w", err)
+			}
+			acc, errAcc := s.FindAccountByID(id)
+
+			if errAcc != nil && errAcc != ErrAccountNotFound {
+				return errAcc
+			}
+			phone := types.Phone(dataLine[1])
+			balance, err := strconv.ParseInt(dataLine[2], 10, 64)
+			if err != nil {
+				return fmt.Errorf("Balance ParseInt() err:%w", err)
+			}
+
+			if errAcc == ErrAccountNotFound {
+				acc, err = s.RegisterAccount(types.Phone(dataLine[1]))
+				if err != nil {
+					return fmt.Errorf("RegisterAccount() err:%w", err)
+				}
+				err = s.Deposit(acc.ID, types.Money(balance))
+				if err != nil {
+					return fmt.Errorf("Deposit() err:%w", err)
+				}
+				continue
+			}
+			acc.Phone = phone
+			acc.Balance = types.Money(balance)
+		}
+	}
+	return nil
+}
+
+func (s *Service) importPayments(filepath string) error {
+
+	data, err := s.ParseFile(filepath)
+	if err != nil {
+		return err
+	}
+
+	if len(data) > 0 {
+		for _, elem := range data {
+			dataLine := strings.Split(elem, ";") //id,accId,amount,Category,status
+			payment, errPay := s.FindPaymentByID(dataLine[0])
+			if errPay != nil && errPay != ErrPaymentNotFound {
+				return err
+			}
+			accID, err := strconv.ParseInt(dataLine[1], 10, 64)
+			if err != nil {
+				return fmt.Errorf("ID ParseInt() err:%w", err)
+			}
+			money, err := strconv.ParseInt(dataLine[2], 10, 64)
+			if err != nil {
+				return fmt.Errorf("ID ParseInt() err:%w", err)
+			}
+			amount := types.Money(money)
+			category := types.PaymentCategory(dataLine[3])
+
+			_, err = s.FindAccountByID(accID)
+			if err != nil && err != ErrAccountNotFound {
+				return err
+			}
+			if err == ErrAccountNotFound {
+				log.Printf("WARN:Account not found.Data integrity is violated. Add the accounts.dump file to the sequence.")
+				continue
+			}
+			if errPay == ErrPaymentNotFound {
+				s.payments = append(s.payments, &types.Payment{
+					ID:        dataLine[0],
+					AccountID: accID,
+					Amount:    amount,
+					Category:  category,
+					Status:    types.PaymentStatus(dataLine[4]),
+				})
+				continue
+			} else {
+				payment.Amount = amount
+				payment.Category = category
+				payment.Status = types.PaymentStatus(dataLine[4])
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Service) importFavorites(filepath string) error {
+
+	data, err := s.ParseFile(filepath)
+	if err != nil {
+		return err
+	}
+	if len(data) > 0 {
+		for _, elem := range data {
+			dataLine := strings.Split(elem, ";") //id,accId,name,amount,Category
+			accID, err := strconv.ParseInt(dataLine[1], 10, 64)
+			if err != nil {
+				return fmt.Errorf("ID ParseInt() err:%w", err)
+			}
+			name := dataLine[2]
+			money, err := strconv.ParseInt(dataLine[3], 10, 64)
+			if err != nil {
+				return fmt.Errorf("ID ParseInt() err:%w", err)
+			}
+			amount := types.Money(money)
+			category := types.PaymentCategory(dataLine[4])
+			favor, err := s.FindFavoritePaymentByID(dataLine[0])
+			if err != nil && err != ErrFavoriteNotFound {
+				return err
+			}
+			if err == ErrFavoriteNotFound { //create new favorite by paymentID
+				for _, payment := range s.payments {
+					if payment.AccountID == accID && payment.Amount == amount && payment.Category == category {
+						s.favorites = append(s.favorites, &types.Favorite{
+							ID:        dataLine[0],
+							AccountID: accID,
+							Name:      dataLine[2],
+							Amount:    amount,
+							Category:  category,
+						})
+						continue
+					}
+				}
+				continue
+			} else {
+				favor.AccountID = accID
+				favor.Amount = amount
+				favor.Name = name
+				favor.Category = category
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Service) ExportAccountHistory(accountID int64) ([]types.Payment, error) {
+	var data []types.Payment
+	_, err := s.FindAccountByID(accountID)
+	if err != nil {
+		return data, err
+	}
+	for _, elem := range s.payments {
+		if elem.AccountID == accountID {
+			data = append(data, *elem)
+		}
+	}
+	return data, nil
+}
+
+func (s *Service) HistoryToFile(payments []types.Payment, dir string, records int) error {
+	var strToRecord string
+	if len(payments) <= records {
+		for _, elem := range payments {
+			strToRecord += elem.String()
+		}
+		if err := s.genericFile(dir, 0, strToRecord); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	counterFiles := 1
+	var counter int
+	endFlag := len(payments) % records
+	for i := 0; i < len(payments); i++ {
+		strToRecord += payments[i].String()
+		counter++
+		if counter == records {
+			if err := s.genericFile(dir, counterFiles, strToRecord); err != nil {
+				return err
+			}
+			counterFiles++
+			counter = 0
+			strToRecord = ""
+		}
+	}
+	if endFlag != 0 {
+		strToRecord = ""
+		for _, b := range payments[len(payments)-endFlag:] {
+			strToRecord += b.String()
+		}
+		if err := s.genericFile(dir, counterFiles, strToRecord); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) genericFile(dir string, index int, data string) error {
+	var path string
+	if index == 0 {
+		path = dir + "/payments.dump"
+	} else {
+		path = dir + "/payments" + strconv.Itoa(index) + ".dump"
+	}
+
+	file, err := os.Create(path)
+	defer file.Close()
+	if err != nil {
+		return fmt.Errorf("Create %v,err:%w", path, err)
+	}
+	_, err = file.Write([]byte(data))
+	if err != nil {
+		file.Close()
+		return fmt.Errorf("Payments write is err:%w", err)
+	}
+	return nil
 }
 
 // my func
