@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -756,6 +757,133 @@ func (s *Service) genericFile(dir string, index int, data string) error {
 		return fmt.Errorf("Payments write is err:%w", err)
 	}
 	return nil
+}
+
+func (s *Service) SumPayments(gorutines int) types.Money {
+	if gorutines <= 1 {
+		return s.sum(0, len(s.payments)+1)
+	}
+	var sum types.Money
+	countElemInPiece := int(len(s.payments) / gorutines)
+	endFlag := len(s.payments) % gorutines
+	if endFlag != 0 {
+		countElemInPiece++
+	}
+	for i := 0; i < len(s.payments); i++ {
+		sum += s.payments[i].Amount
+	}
+	//fmt.Println("control sum=", sum)
+	sum = 0
+	mu := sync.Mutex{}
+	wg := sync.WaitGroup{}
+	for i := 0; i < len(s.payments); i += countElemInPiece {
+		endInd := i + countElemInPiece
+		if endInd >= len(s.payments) {
+			endInd = len(s.payments)
+		}
+		wg.Add(1)
+		go func(start, end int) {
+			pieceSum := s.sum(start, end)
+			defer mu.Unlock()
+			defer wg.Done()
+			mu.Lock()
+			sum += pieceSum
+		}(i, endInd)
+	}
+	wg.Wait()
+	return sum
+}
+
+func (s *Service) FilterPayments(accountID int64, gorutines int) []types.Payment {
+	if gorutines <= 1 {
+		return s.findPayments(accountID, 0, len(s.payments)+1)
+	}
+	var lastContainer []types.Payment
+	countElemInPiece := int(len(s.payments) / gorutines)
+	endFlag := len(s.payments) % gorutines
+	if endFlag != 0 {
+		countElemInPiece++
+	}
+	/*for i := 0; i < len(s.payments); i++ {
+		sum += s.payments[i].Amount
+	}*/
+	//fmt.Println("control sum=", sum)
+	mu := sync.Mutex{}
+	wg := sync.WaitGroup{}
+	for i := 0; i < len(s.payments); i += countElemInPiece {
+		endInd := i + countElemInPiece
+		if endInd >= len(s.payments) {
+			endInd = len(s.payments)
+		}
+		wg.Add(1)
+		go func(accountID int64, start, end int) {
+			pieceCnt := s.findPayments(accountID, start, end)
+			defer mu.Unlock()
+			defer wg.Done()
+			mu.Lock()
+			lastContainer = append(lastContainer, pieceCnt...)
+		}(accountID, i, endInd)
+	}
+	wg.Wait()
+	return lastContainer
+}
+
+func (s *Service) FilterPaymentsByFN(filter func(payment types.Payment) bool, gorutines int) []types.Payment {
+	if gorutines <= 1 {
+		return s.findPaymentsByFn(filter, 0, len(s.payments)+1)
+	}
+	var lastContainer []types.Payment
+	countElemInPiece := int(len(s.payments) / gorutines)
+	endFlag := len(s.payments) % gorutines
+	if endFlag != 0 {
+		countElemInPiece++
+	}
+	mu := sync.Mutex{}
+	wg := sync.WaitGroup{}
+	for i := 0; i < len(s.payments); i += countElemInPiece {
+		endInd := i + countElemInPiece
+		if endInd >= len(s.payments) {
+			endInd = len(s.payments)
+		}
+		wg.Add(1)
+		go func(filter func(payment types.Payment) bool, start, end int) {
+			pieceCnt := s.findPaymentsByFn(filter, start, end)
+			defer mu.Unlock()
+			defer wg.Done()
+			mu.Lock()
+			lastContainer = append(lastContainer, pieceCnt...)
+		}(filter, i, endInd)
+	}
+	wg.Wait()
+	return lastContainer
+}
+
+func (s *Service) sum(start, end int) types.Money {
+	var sum types.Money
+	for _, c := range s.payments[start:end] {
+		sum += c.Amount
+	}
+	return sum
+}
+
+func (s *Service) findPaymentsByFn(filter func(payment types.Payment) bool, start, end int) []types.Payment {
+	var container []types.Payment
+	for _, c := range s.payments[start:end] {
+		if filter(*c) {
+			container = append(container, *c)
+		}
+	}
+	return container
+}
+
+func (s *Service) findPayments(accountID int64, start, end int) []types.Payment {
+	var container []types.Payment
+	for _, c := range s.payments[start:end] {
+		if c.AccountID == accountID {
+			container = append(container, *c)
+		}
+	}
+	return container
 }
 
 // my func

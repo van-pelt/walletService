@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/van-pelt/walletService/pkg/wallet"
+	"github.com/van-pelt/walletTypes/pkg/types"
 )
 
 func main() {
@@ -36,4 +37,22 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+
+	sum := svc.SumPayments(5)
+	fmt.Println("current sum=", sum)
+	cnt := svc.FilterPayments(20, 5)
+	for _, el := range cnt {
+		fmt.Println(el.ID)
+	}
+	cntf := svc.FilterPaymentsByFN(checkCategory, 5)
+	for _, el := range cntf {
+		fmt.Println(el.ID, " category=", el.Category, " accountID=", el.AccountID)
+	}
+}
+
+func checkCategory(payment types.Payment) bool {
+	if payment.Category == "learn" && payment.AccountID == 20 {
+		return true
+	}
+	return false
 }
