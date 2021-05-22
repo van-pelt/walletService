@@ -40,6 +40,15 @@ func main() {
 
 	sum := svc.SumPayments(5)
 	fmt.Println("current sum=", sum)
+
+	pg := svc.SumPaymentsWithProgress(10)
+	sum = 0
+	for i := range pg {
+		fmt.Println("current Part=", i.Part, " sum=", i.Result)
+		sum += i.Result
+	}
+	fmt.Println("total sum=", sum)
+
 	cnt := svc.FilterPayments(20, 5)
 	for _, el := range cnt {
 		fmt.Println(el.ID)

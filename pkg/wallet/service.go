@@ -32,6 +32,11 @@ const (
 	favType         = "favorites"
 )
 
+type Progress struct {
+	Part   int
+	Result types.Money
+}
+
 type ErrCurrPaymentNotFound struct {
 	ErrMess string
 	ID      string
@@ -761,7 +766,7 @@ func (s *Service) genericFile(dir string, index int, data string) error {
 
 func (s *Service) SumPayments(gorutines int) types.Money {
 	if gorutines <= 1 {
-		return s.sum(0, len(s.payments)+1)
+		return s.sum(0, len(s.payments))
 	}
 	var sum types.Money
 	countElemInPiece := int(len(s.payments) / gorutines)
@@ -796,7 +801,7 @@ func (s *Service) SumPayments(gorutines int) types.Money {
 
 func (s *Service) FilterPayments(accountID int64, gorutines int) []types.Payment {
 	if gorutines <= 1 {
-		return s.findPayments(accountID, 0, len(s.payments)+1)
+		return s.findPayments(accountID, 0, len(s.payments))
 	}
 	var lastContainer []types.Payment
 	countElemInPiece := int(len(s.payments) / gorutines)
@@ -830,7 +835,7 @@ func (s *Service) FilterPayments(accountID int64, gorutines int) []types.Payment
 
 func (s *Service) FilterPaymentsByFN(filter func(payment types.Payment) bool, gorutines int) []types.Payment {
 	if gorutines <= 1 {
-		return s.findPaymentsByFn(filter, 0, len(s.payments)+1)
+		return s.findPaymentsByFn(filter, 0, len(s.payments))
 	}
 	var lastContainer []types.Payment
 	countElemInPiece := int(len(s.payments) / gorutines)
@@ -884,6 +889,54 @@ func (s *Service) findPayments(accountID int64, start, end int) []types.Payment 
 		}
 	}
 	return container
+}
+
+func (s *Service) SumPaymentsWithProgress(gorutines int) <-chan Progress {
+
+	prog := make(chan Progress, gorutines)
+	if gorutines <= 1 {
+		prog <- Progress{
+			Part:   1,
+			Result: s.sum(0, len(s.payments)),
+		}
+		close(prog)
+		return prog
+	}
+
+	countElemInPiece := int(len(s.payments) / gorutines)
+	endFlag := len(s.payments) % gorutines
+	if endFlag != 0 {
+		countElemInPiece++
+	}
+	/*for i := 0; i < len(s.payments); i++ {
+		sum += s.payments[i].Amount
+	}*/
+	//fmt.Println("control sum=", sum)
+
+	wg := sync.WaitGroup{}
+	internalcounter := 1
+	for i := 0; i < len(s.payments); i += countElemInPiece {
+		endInd := i + countElemInPiece
+		if endInd >= len(s.payments) {
+			endInd = len(s.payments)
+		}
+		wg.Add(1)
+		go func(ch chan<- Progress, counter int, start, end int) {
+			pieceSum := s.sum(start, end)
+			defer wg.Done()
+			prog <- Progress{
+				Part:   counter,
+				Result: pieceSum,
+			}
+		}(prog, internalcounter, i, endInd)
+		internalcounter++
+	}
+
+	go func() {
+		defer close(prog)
+		wg.Wait()
+	}()
+	return prog
 }
 
 // my func
